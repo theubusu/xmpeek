@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 roxmltree = "0.21.1"
 eframe = "0.33.3"
+rfd = "0.16.0"
+memchr = "2.6"

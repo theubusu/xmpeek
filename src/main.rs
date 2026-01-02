@@ -1,17 +1,27 @@
-use std::env;
-use std::fs;
 //use std::io::{Write};
 use eframe::egui::{self, TopBottomPanel, MenuBar, RichText};
 
+//-- xpacket --
 const XPACKET_BEGIN: &[u8] = b"<?xpacket begin=";
 const XPACKET_END_START: &[u8] = b"<?xpacket end=";
 const XPACKET_END: &[u8] = b"?>";
 
-fn find_bytes(data: &[u8], pattern: &[u8]) -> Option<usize> {
-    data.windows(pattern.len()).position(|window| window == pattern)
+struct XpacketInfo {
+    data: Vec<u8>,
+    offset: usize,
+    size: usize,
 }
 
-//xml
+fn extract_xpacket(data: &[u8]) -> Result<XpacketInfo, String> {
+    let begin = memchr::memmem::find(data, XPACKET_BEGIN).ok_or("xpacket beginning marker not found!".to_string())?;
+    let end_start = memchr::memmem::find(&data[begin..], XPACKET_END_START).ok_or("xpacket end marker not found!".to_string())? + begin;
+    let end = memchr::memmem::find(&data[end_start..], XPACKET_END).ok_or("xpacket end not found!".to_string())? + end_start + XPACKET_END.len();
+
+    Ok(XpacketInfo {data: data[begin..end].to_vec(), offset: begin, size: end - begin})
+}
+//-- end xpacket -- 
+
+//-- xml --
 #[derive(Debug)]
 struct XmlNode {
     name: String,
@@ -48,12 +58,42 @@ fn build_tree(node: roxmltree::Node) -> Option<XmlNode> {
 
     Some(XmlNode {name, attributes, children, text})
 }
-//
+//-- end xml --
 
-//GUI
+//-- GUI --
 struct XmpeekApp {
-    root: XmlNode,
+    root: Option<XmlNode>,
+    error_message: Option<String>,
+    current_file: Option<String>,
+    file_to_load: Option<String>,
+
+    xpacket_offset: Option<usize>,
+    xpacket_size: Option<usize>,
 }
+
+impl XmpeekApp {
+    fn load_file(&mut self, path: &str) {
+        match std::fs::read(path) {
+            Ok(data) => match extract_xpacket(&data) {
+                Ok(info) => {
+                    self.xpacket_offset = Some(info.offset);
+                    self.xpacket_size = Some(info.size);
+                    let xml = String::from_utf8_lossy(&info.data);
+                    match roxmltree::Document::parse(&xml) {
+                        Ok(doc) => {
+                            self.root = Some(build_tree(doc.root_element()).unwrap());
+                            self.current_file = Some(path.to_string());
+                        }
+                        Err(e) => self.error_message = Some(format!("Failed to parse XML: {}", e)),
+                    }
+                }
+                Err(e) => self.error_message = Some(format!("Failed to extract xpacket: {}", e)),
+            },
+            Err(e) => self.error_message = Some(format!("Failed to read file: {}", e)),
+        }
+    }
+}
+
 
 impl eframe::App for XmpeekApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
@@ -62,6 +102,9 @@ impl eframe::App for XmpeekApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
                         //open a file
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            self.load_file(path.to_str().unwrap());
+                        }
                     }
                     if ui.button("Save xpacket").clicked() {
                         //export the xpacket as a file
@@ -82,19 +125,48 @@ impl eframe::App for XmpeekApp {
             });
         });
 
+        if let Some(path) = self.file_to_load.take() {
+            self.load_file(&path);
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    show_node(ui, &self.root);
-                });
+            if let Some(root) = &self.root {
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        show_node(ui, root);
+                    });
+            } else {
+                //no file loaded
+                ui.centered_and_justified(|ui| ui.label("No file loaded."));
+            }
         });
 
         TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("put the infos about xpacket");
+                if let (Some(offset), Some(size), Some(current_file)) = (self.xpacket_offset, self.xpacket_size, &self.current_file) {
+                    ui.label(format!("File: {} | xpacket - Offset: {}, Size: {}", current_file, offset, size));
+                } else {
+                    ui.label("...");
+                }
             });
         });
+
+
+        if let Some(msg) = &self.error_message {
+            let msg = msg.clone();
+            egui::Window::new("Error")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label(egui::RichText::new(msg).strong());
+                    if ui.button("OK").clicked() {
+                        self.error_message = None;
+                    }
+            });
+        }
+
     }
 }
 
@@ -119,34 +191,24 @@ fn show_node(ui: &mut egui::Ui, node: &XmlNode) {
             }
         });
 }
-//
+// -- end GUI -- 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1).ok_or("Ussage: xmpeek <file>")?;
-    let data = fs::read(&path)?;
-
-    //locate xpacket
-    let begin = find_bytes(&data, XPACKET_BEGIN).ok_or("No xpacket found!")?;
-    println!("xpacket begin found at {}", begin);
-    let end_start = find_bytes(&data[begin..], XPACKET_END_START).ok_or("xpacket end start not found!")? + begin;
-    let end = find_bytes(&data[end_start..], XPACKET_END).ok_or("xpacket end not found!")? + end_start + XPACKET_END.len();
-
-    let xpacket = &data[begin..end].to_vec();
-    println!("xpacket OK - Start: {}, End: {}, Lenght: {}", begin, end, xpacket.len() );
-    drop(data); //drop the file data to save memory
-
-    //let mut out = fs::File::create("out.xml")?;
-    //out.write_all(&xpacket)?;
-    //println!("- Saved file!");
-
-    let xml = String::from_utf8_lossy(&xpacket);
-    let doc = roxmltree::Document::parse(&xml)?;
-    let root = build_tree(doc.root_element()).unwrap();
+    let file_path = std::env::args().nth(1); //optional: file path from cmd arg
 
     eframe::run_native(
         "xmpeek",
         eframe::NativeOptions::default(),
-        Box::new(|_| Ok(Box::new(XmpeekApp { root }))),
+        Box::new(move |_| {
+            Ok(Box::new(XmpeekApp {
+                root: None,
+                error_message: None,
+                current_file: None,
+                file_to_load: file_path,
+                xpacket_offset: None,
+                xpacket_size: None,
+            }))
+        }),
     )?;
 
     Ok(())
