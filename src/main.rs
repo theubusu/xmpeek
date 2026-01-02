@@ -67,6 +67,7 @@ struct XmpeekApp {
     current_file: Option<String>,
     file_to_load: Option<String>,
 
+    xpacket_data: Option<Vec<u8>>,
     xpacket_offset: Option<usize>,
     xpacket_size: Option<usize>,
 }
@@ -76,8 +77,10 @@ impl XmpeekApp {
         match std::fs::read(path) {
             Ok(data) => match extract_xpacket(&data) {
                 Ok(info) => {
+                    self.xpacket_data = Some(info.data.clone());
                     self.xpacket_offset = Some(info.offset);
                     self.xpacket_size = Some(info.size);
+                    
                     let xml = String::from_utf8_lossy(&info.data);
                     match roxmltree::Document::parse(&xml) {
                         Ok(doc) => {
@@ -94,7 +97,6 @@ impl XmpeekApp {
     }
 }
 
-
 impl eframe::App for XmpeekApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -108,6 +110,16 @@ impl eframe::App for XmpeekApp {
                     }
                     if ui.button("Save xpacket").clicked() {
                         //export the xpacket as a file
+                        if let Some(data) = &self.xpacket_data {
+                            if let Some(path) = rfd::FileDialog::new().set_file_name("xpacket.xml").save_file() {
+                                if let Err(e) = std::fs::write(&path, data) {
+                                    self.error_message = Some(format!("Failed to save file: {}",e));
+                                }
+                            }
+                        } else {
+                            self.error_message = Some("There is no xpacket loaded!".to_string());
+                        }
+
                     }
                     if ui.button("About").clicked() {
                         //show info about progeram
@@ -205,6 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 error_message: None,
                 current_file: None,
                 file_to_load: file_path,
+                xpacket_data: None,
                 xpacket_offset: None,
                 xpacket_size: None,
             }))
