@@ -141,6 +141,16 @@ impl eframe::App for XmpeekApp {
             self.load_file(&path);
         }
 
+        TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if let (Some(offset), Some(size), Some(current_file)) = (self.xpacket_offset, self.xpacket_size, &self.current_file) {
+                    ui.label(format!("File: {} | xpacket - Offset: {}, Size: {}", current_file, offset, size));
+                } else {
+                    ui.label("...");
+                }
+            });
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(root) = &self.root {
                 egui::ScrollArea::both()
@@ -153,17 +163,6 @@ impl eframe::App for XmpeekApp {
                 ui.centered_and_justified(|ui| ui.label("No file loaded."));
             }
         });
-
-        TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if let (Some(offset), Some(size), Some(current_file)) = (self.xpacket_offset, self.xpacket_size, &self.current_file) {
-                    ui.label(format!("File: {} | xpacket - Offset: {}, Size: {}", current_file, offset, size));
-                } else {
-                    ui.label("...");
-                }
-            });
-        });
-
 
         if let Some(msg) = &self.error_message {
             let msg = msg.clone();
