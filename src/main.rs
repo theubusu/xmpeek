@@ -61,18 +61,21 @@ impl eframe::App for XmpeekApp {
             MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
-                        //do
+                        //open a file
                     }
                     if ui.button("Save xpacket").clicked() {
-                        //do
+                        //export the xpacket as a file
+                    }
+                    if ui.button("About").clicked() {
+                        //show info about progeram
                     }
                 });
 
                 ui.menu_button("View", |ui| {
-                    if ui.button("1").clicked() {
+                    if ui.button("Expand all").clicked() {
                         //do
                     }
-                    if ui.button("2").clicked() {
+                    if ui.button("Collapse all").clicked() {
                         //do
                     }
                 });
@@ -86,11 +89,17 @@ impl eframe::App for XmpeekApp {
                     show_node(ui, &self.root);
                 });
         });
+
+        TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("put the infos about xpacket");
+            });
+        });
     }
 }
 
 fn show_node(ui: &mut egui::Ui, node: &XmlNode) {
-    egui::CollapsingHeader::new(&node.name)
+    egui::CollapsingHeader::new(RichText::new(&node.name).strong().italics())
         .id_salt(node as *const _) //prevent collision of elements with same name
         .default_open(false)
         .show(ui, |ui| {
@@ -102,7 +111,7 @@ fn show_node(ui: &mut egui::Ui, node: &XmlNode) {
             }
 
             if let Some(text) = &node.text {
-                ui.label(format!("text: {}", text));
+                ui.label(format!("{}", text));
             }
 
             for child in &node.children {
