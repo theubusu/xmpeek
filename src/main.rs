@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
-use std::io::{Write};
-use eframe::egui;
+//use std::io::{Write};
+use eframe::egui::{self, TopBottomPanel, MenuBar, RichText};
 
 const XPACKET_BEGIN: &[u8] = b"<?xpacket begin=";
 const XPACKET_END_START: &[u8] = b"<?xpacket end=";
@@ -57,6 +57,28 @@ struct XmpeekApp {
 
 impl eframe::App for XmpeekApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Open").clicked() {
+                        //do
+                    }
+                    if ui.button("Save xpacket").clicked() {
+                        //do
+                    }
+                });
+
+                ui.menu_button("View", |ui| {
+                    if ui.button("1").clicked() {
+                        //do
+                    }
+                    if ui.button("2").clicked() {
+                        //do
+                    }
+                });
+            });
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
@@ -69,10 +91,14 @@ impl eframe::App for XmpeekApp {
 
 fn show_node(ui: &mut egui::Ui, node: &XmlNode) {
     egui::CollapsingHeader::new(&node.name)
+        .id_salt(node as *const _) //prevent collision of elements with same name
         .default_open(false)
         .show(ui, |ui| {
             for (k, v) in &node.attributes {
-                ui.label(format!("{} = {}", k, v));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{}:", k)).strong()); // bold
+                    ui.label(v);                         // normal
+                });
             }
 
             if let Some(text) = &node.text {
@@ -96,8 +122,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let end_start = find_bytes(&data[begin..], XPACKET_END_START).ok_or("xpacket end start not found!")? + begin;
     let end = find_bytes(&data[end_start..], XPACKET_END).ok_or("xpacket end not found!")? + end_start + XPACKET_END.len();
 
-    let xpacket = &data[begin..end];
+    let xpacket = &data[begin..end].to_vec();
     println!("xpacket OK - Start: {}, End: {}, Lenght: {}", begin, end, xpacket.len() );
+    drop(data); //drop the file data to save memory
 
     //let mut out = fs::File::create("out.xml")?;
     //out.write_all(&xpacket)?;
