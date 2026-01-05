@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui::{self, TopBottomPanel, MenuBar, RichText};
-use rfd::{MessageDialog, MessageLevel};
+use rfd::{FileDialog, MessageDialog, MessageLevel};
 
 //-- xpacket --
 const XPACKET_BEGIN: &[u8] = b"<?xpacket begin=";
@@ -75,27 +75,20 @@ struct XmpeekApp {
 }
 
 impl XmpeekApp {
-    fn load_file(&mut self, path: &str) {
-        match std::fs::read(path) {
-            Ok(data) => match extract_xpacket(&data) {
-                Ok(info) => {
-                    self.xpacket_data = Some(info.data.clone());
-                    self.xpacket_offset = Some(info.offset);
-                    self.xpacket_size = Some(info.size);
-                    
-                    let xml = String::from_utf8_lossy(&info.data);
-                    match roxmltree::Document::parse(&xml) {
-                        Ok(doc) => {
-                            self.root = Some(build_tree(doc.root_element()).unwrap());
-                            self.current_file = Some(path.to_string());
-                        }
-                        Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to parse XML: {}", e)).show();},
-                    }
-                }
-                Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to extract xpacket: {}", e)).show();},
-            },
-            Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to read file: {}", e)).show();},
-        }
+    fn load_file(&mut self, path: &str) -> Result<(), String> {
+        let data = std::fs::read(path).map_err(|e| format!("Failed to read file: {}", e))?;
+        let info = extract_xpacket(&data).map_err(|e| format!("Failed to extract xpacket: {}", e))?;
+        
+        let xml = String::from_utf8_lossy(&info.data);
+        let doc = roxmltree::Document::parse(&xml).map_err(|e| format!("Failed to parse XML: {}", e))?;
+        self.root = Some(build_tree(doc.root_element()).unwrap());
+
+        self.current_file = Some(path.to_string());
+        self.xpacket_data = Some(info.data);
+        self.xpacket_offset = Some(info.offset);
+        self.xpacket_size = Some(info.size);
+        
+        Ok(())
     }
 }
 
@@ -106,14 +99,16 @@ impl eframe::App for XmpeekApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
                         //open a file
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            self.load_file(path.to_str().unwrap());
+                        if let Some(path) = FileDialog::new().pick_file() {
+                            if let Err(err) = self.load_file(path.to_str().unwrap()) {
+                                MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(err).show();
+                            }
                         }
                     }
                     if ui.button("Save xpacket").clicked() {
                         //export the xpacket as a file
                         if let Some(data) = &self.xpacket_data {
-                            if let Some(path) = rfd::FileDialog::new().set_file_name("xpacket.xml").save_file() {
+                            if let Some(path) = FileDialog::new().set_file_name("xpacket.xml").save_file() {
                                 if let Err(e) = std::fs::write(&path, data) {
                                     MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to save file: {}", e)).show();
                                 }
@@ -125,6 +120,7 @@ impl eframe::App for XmpeekApp {
                     }
                     if ui.button("About").clicked() {
                         //show info about progeram
+                        MessageDialog::new().set_level(MessageLevel::Info).set_title("About").set_description(format!("xmpeek")).show();
                     }
                 });
 
@@ -140,7 +136,11 @@ impl eframe::App for XmpeekApp {
         });
 
         if let Some(path) = self.file_to_load.take() {
-            self.load_file(&path);
+            if let Err(err) = self.load_file(&path) {
+                MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(err).show();
+                //if we launched file from cmdline and it failed, do NOT display the app gui. at least this is the behaviour i want - so exit the app
+                std::process::exit(0);
+            };
         }
 
         TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
