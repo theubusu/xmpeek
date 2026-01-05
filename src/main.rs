@@ -1,5 +1,8 @@
-//use std::io::{Write};
+//for no cmd on windows in release mode
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use eframe::egui::{self, TopBottomPanel, MenuBar, RichText};
+use rfd::{MessageDialog, MessageLevel};
 
 //-- xpacket --
 const XPACKET_BEGIN: &[u8] = b"<?xpacket begin=";
@@ -63,7 +66,6 @@ fn build_tree(node: roxmltree::Node) -> Option<XmlNode> {
 //-- GUI --
 struct XmpeekApp {
     root: Option<XmlNode>,
-    error_message: Option<String>,
     current_file: Option<String>,
     file_to_load: Option<String>,
 
@@ -87,12 +89,12 @@ impl XmpeekApp {
                             self.root = Some(build_tree(doc.root_element()).unwrap());
                             self.current_file = Some(path.to_string());
                         }
-                        Err(e) => self.error_message = Some(format!("Failed to parse XML: {}", e)),
+                        Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to parse XML: {}", e)).show();},
                     }
                 }
-                Err(e) => self.error_message = Some(format!("Failed to extract xpacket: {}", e)),
+                Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to extract xpacket: {}", e)).show();},
             },
-            Err(e) => self.error_message = Some(format!("Failed to read file: {}", e)),
+            Err(e) => {MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to read file: {}", e)).show();},
         }
     }
 }
@@ -113,11 +115,11 @@ impl eframe::App for XmpeekApp {
                         if let Some(data) = &self.xpacket_data {
                             if let Some(path) = rfd::FileDialog::new().set_file_name("xpacket.xml").save_file() {
                                 if let Err(e) = std::fs::write(&path, data) {
-                                    self.error_message = Some(format!("Failed to save file: {}",e));
+                                    MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to save file: {}", e)).show();
                                 }
                             }
                         } else {
-                            self.error_message = Some("There is no xpacket loaded!".to_string());
+                            MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description("There is no xpacket loaded!").show();
                         }
 
                     }
@@ -163,21 +165,6 @@ impl eframe::App for XmpeekApp {
                 ui.centered_and_justified(|ui| ui.label("No file loaded."));
             }
         });
-
-        if let Some(msg) = &self.error_message {
-            let msg = msg.clone();
-            egui::Window::new("Error")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label(egui::RichText::new(msg).strong());
-                    if ui.button("OK").clicked() {
-                        self.error_message = None;
-                    }
-            });
-        }
-
     }
 }
 
@@ -213,7 +200,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(move |_| {
             Ok(Box::new(XmpeekApp {
                 root: None,
-                error_message: None,
                 current_file: None,
                 file_to_load: file_path,
                 xpacket_data: None,
