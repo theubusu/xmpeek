@@ -68,10 +68,7 @@ struct XmpeekApp {
     root: Option<XmlNode>,
     current_file: Option<String>,
     file_to_load: Option<String>,
-
-    xpacket_data: Option<Vec<u8>>,
-    xpacket_offset: Option<usize>,
-    xpacket_size: Option<usize>,
+    xpacket_info: Option<XpacketInfo>,
 }
 
 impl XmpeekApp {
@@ -84,9 +81,7 @@ impl XmpeekApp {
         self.root = Some(build_tree(doc.root_element()).unwrap());
 
         self.current_file = Some(path.to_string());
-        self.xpacket_data = Some(info.data);
-        self.xpacket_offset = Some(info.offset);
-        self.xpacket_size = Some(info.size);
+        self.xpacket_info = Some(info);
         
         Ok(())
     }
@@ -107,9 +102,9 @@ impl eframe::App for XmpeekApp {
                     }
                     if ui.button("Save xpacket").clicked() {
                         //export the xpacket as a file
-                        if let Some(data) = &self.xpacket_data {
+                        if let Some(info) = &self.xpacket_info {
                             if let Some(path) = FileDialog::new().set_file_name("xpacket.xml").save_file() {
-                                if let Err(e) = std::fs::write(&path, data) {
+                                if let Err(e) = std::fs::write(&path, &info.data) {
                                     MessageDialog::new().set_level(MessageLevel::Error).set_title("Error").set_description(format!("Failed to save file: {}", e)).show();
                                 }
                             }
@@ -145,8 +140,8 @@ impl eframe::App for XmpeekApp {
 
         TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if let (Some(offset), Some(size), Some(current_file)) = (self.xpacket_offset, self.xpacket_size, &self.current_file) {
-                    ui.label(format!("File: {} | xpacket - Offset: {}, Size: {}", current_file, offset, size));
+                if let (Some(info), Some(current_file)) = (&self.xpacket_info, &self.current_file) {
+                    ui.label(format!("File: {} | xpacket - Offset: {}, Size: {}", current_file, info.offset, info.size));
                 } else {
                     ui.label("...");
                 }
@@ -202,9 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 root: None,
                 current_file: None,
                 file_to_load: file_path,
-                xpacket_data: None,
-                xpacket_offset: None,
-                xpacket_size: None,
+                xpacket_info: None,
             }))
         }),
     )?;
